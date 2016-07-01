@@ -11,7 +11,6 @@ import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.media.AudioManager;
 import android.util.Log;
 import android.app.Activity;
@@ -21,9 +20,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.view.MotionEvent;
 import android.view.OrientationEventListener;
-import android.view.ScaleGestureDetector;
 import android.view.View;
-import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -33,10 +30,8 @@ import com.flir.flironesdk.Device;
 import com.flir.flironesdk.Frame;
 import com.flir.flironesdk.FrameProcessor;
 import com.flir.flironesdk.RenderedImage;
-import com.flir.flironesdk.SimulatedDevice;
 
 import java.util.EnumSet;
-import java.util.concurrent.Executor;
 
 /**
  * An example activity and delegate for FLIR One image streaming and device interaction.
@@ -49,7 +44,7 @@ import java.util.concurrent.Executor;
  * @see com.flir.flironesdk.Device.StreamDelegate
  * @see com.flir.flironesdk.Device.PowerUpdateDelegate
  */
-public class PreviewActivity extends Activity implements Device.Delegate, Device.StreamDelegate, FrameProcessor.Delegate, Device.PowerUpdateDelegate {
+public class MainActivity extends Activity implements Device.Delegate, Device.StreamDelegate, FrameProcessor.Delegate, Device.PowerUpdateDelegate {
     private ImageView thermalImageView;
     private OverlayDrawable overlayDrawable;
 
@@ -96,7 +91,6 @@ public class PreviewActivity extends Activity implements Device.Delegate, Device
                 thermalImageView.clearColorFilter();
                 findViewById(R.id.tuningProgressBar).setVisibility(View.GONE);
                 findViewById(R.id.tuningTextView).setVisibility(View.GONE);
-                findViewById(R.id.connect_sim_button).setEnabled(true);
             }
         });
         flirOneDevice = null;
@@ -284,21 +278,6 @@ public class PreviewActivity extends Activity implements Device.Delegate, Device
         }
 
     }
-    public void onConnectSimClicked(View v){
-        if (flirOneDevice == null) {
-            try {
-                flirOneDevice = new SimulatedDevice(this, this, getResources().openRawResource(R.raw.sampleframes), 10);
-                flirOneDevice.setPowerUpdateDelegate(this);
-            } catch (Exception ex) {
-                flirOneDevice = null;
-                Log.e("PreviewActivity", "onConnectSimClicked Exception: ", ex);
-                ex.printStackTrace();
-            }
-        } else if (flirOneDevice instanceof SimulatedDevice) {
-            flirOneDevice.close();
-            flirOneDevice = null;
-        }
-    }
 
     public void onRotateClicked(View v){
         ToggleButton theSwitch = (ToggleButton)v;
@@ -360,7 +339,6 @@ public class PreviewActivity extends Activity implements Device.Delegate, Device
         thermalImageView.getOverlay().add(overlayDrawable);
 
         final View controlsView = findViewById(R.id.fullscreen_content_controls);
-        final View controlsViewTop = findViewById(R.id.fullscreen_content_controls_top);
         final View contentView = findViewById(R.id.fullscreen_content);
 
         // Set up an instance of SystemUiHider to control the system UI for
@@ -391,15 +369,13 @@ public class PreviewActivity extends Activity implements Device.Delegate, Device
                                         android.R.integer.config_shortAnimTime);
                             }
                             controlsView.animate()
-                                    .translationY(visible ? 0 : mControlsHeight)
+                                    .translationY(visible ? 0 : -mControlsHeight)
                                     .setDuration(mShortAnimTime);
-                            controlsViewTop.animate().translationY(visible ? 0 : -1 * mControlsHeight).setDuration(mShortAnimTime);
                         } else {
                             // If the ViewPropertyAnimator APIs aren't
                             // available, simply show or hide the in-layout UI
                             // controls.
                             controlsView.setVisibility(visible ? View.VISIBLE : View.GONE);
-                            controlsViewTop.setVisibility(visible ? View.VISIBLE : View.GONE);
                         }
 
                         delayedHide(AUTO_HIDE_DELAY_MILLIS);
@@ -436,8 +412,7 @@ public class PreviewActivity extends Activity implements Device.Delegate, Device
         try {
             Device.startDiscovery(this, this);
         } catch (IllegalStateException e) {
-            Log.e("PreviewActivity", "Somehow we've started discovery twice");
-            e.printStackTrace();
+            Log.e("MainActivity", "Caught IllegalStateException", e);
         }
         super.onRestart();
     }
@@ -445,7 +420,6 @@ public class PreviewActivity extends Activity implements Device.Delegate, Device
     @Override
     public void onStop() {
         // We must unregister our usb receiver, otherwise we will steal events from other apps
-        Log.e("PreviewActivity", "onStop, stopping discovery!");
         Device.stopDiscovery();
         super.onStop();
     }
@@ -496,7 +470,7 @@ public class PreviewActivity extends Activity implements Device.Delegate, Device
         @Override
         public void run() {
             if (flirOneDevice == null) {
-                mPromptToast = Toast.makeText(PreviewActivity.this, R.string.no_camera_prompt, Toast.LENGTH_LONG);
+                mPromptToast = Toast.makeText(MainActivity.this, R.string.no_camera_prompt, Toast.LENGTH_LONG);
                 mPromptToast.show();
             }
         }
