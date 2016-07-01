@@ -400,7 +400,10 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
         Dialog dialog = new AlertDialog.Builder(this).setTitle(R.string.app_name).setMessage(R.string.about_dialog).setPositiveButton("OK", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialogInterface, int i) {
-                // Don't care
+                // Trigger the initial hide() shortly after the activity has been
+                // created, to briefly hint to the user that UI controls
+                // are available.
+                delayedHide(100);
             }
         }).create();
         dialog.show();
@@ -427,11 +430,6 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
     @Override
     protected void onPostCreate(Bundle savedInstanceState) {
         super.onPostCreate(savedInstanceState);
-
-        // Trigger the initial hide() shortly after the activity has been
-        // created, to briefly hint to the user that UI controls
-        // are available.
-        delayedHide(100);
     }
 
     /**

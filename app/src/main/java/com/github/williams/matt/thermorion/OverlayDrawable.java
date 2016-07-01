@@ -29,14 +29,10 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
     int panelXPadding;
     int panelYPadding;
     private long startTime;
-    private short[] thermalData;
+    private boolean[] toneArray;
     private boolean[] animating;
     private int timeslot;
     private int tickInTimeslot;
-    private short thermalAverage;
-    private short thermalMinimum;
-    private short thermalMaximum;
-    private short thermalThreshold;
     private AudioManager audioManager;
     private SoundPool soundPool;
     private int soundId;
@@ -100,7 +96,7 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
         numPanelsHigh = (int)(height * 0.95) / panelSize;
         panelXPadding = (width - (numPanelsWide * panelSize)) / 2;
         panelYPadding = (height - (numPanelsHigh * panelSize)) / 2;
-        thermalData = new short[numPanelsWide * numPanelsHigh];
+        toneArray = new boolean[numPanelsWide * numPanelsHigh];
         animating = new boolean[Math.min(numPanelsWide, numPanelsHigh)];
         startTime = new Date().getTime();
         timeslot = 0;
@@ -136,7 +132,7 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
                         synchronized (OverlayDrawable.this) {
                             if (width > height) {
                                 for (int y = 0; y < numPanelsHigh; y++) {
-                                    boolean play = (thermalData[timeslot + y * numPanelsWide] > thermalThreshold);
+                                    boolean play = toneArray[timeslot + y * numPanelsWide];
                                     animating[y] = play;
                                     if ((play) && (soundLoaded)) {
                                         soundPool.play(soundId, volume, volume, 1, 0, SCALE[y]);
@@ -144,7 +140,7 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
                                 }
                             } else {
                                 for (int x = 0; x < numPanelsWide; x++) {
-                                    boolean play = (thermalData[x + timeslot * numPanelsWide] > thermalThreshold);
+                                    boolean play = toneArray[x + timeslot * numPanelsWide];
                                     animating[x] = play;
                                     if ((play) && (soundLoaded)) {
                                         soundPool.play(soundId, volume, volume, 1, 0, SCALE[x]);
@@ -177,7 +173,7 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
                             (width <= height) && (timeslot == y) && (animating[x])) {
                         // We'll do this just below, after we've drawn all the "background" entries...
                     }
-                    else if (thermalData[x + y * numPanelsWide] > thermalThreshold) {
+                    else if (toneArray[x + y * numPanelsWide]) {
                         paint.setColor(Color.BLACK);
                         paint.setStrokeWidth(8);
                         canvas.drawRoundRect(left + panelXPadding + panelSize * x + 10, top + panelYPadding + panelSize * y + 10, left + panelXPadding + panelSize * (x + 1) - 10, top + panelYPadding + panelSize * (y + 1) - 10, 5, 5, paint);
@@ -245,10 +241,10 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
 
     public void updateThermalImage(RenderedImage renderedImage) {
         if ((numPanelsWide > 0) && (numPanelsHigh > 0)) {
-            short[] newThermalData = new short[numPanelsWide * numPanelsHigh];
-            long newThermalTotal = 0;
-            short newThermalMinimum = Short.MAX_VALUE;
-            short newThermalMaximum = Short.MIN_VALUE;
+            short[] thermalData = new short[numPanelsWide * numPanelsHigh];
+            long thermalTotal = 0;
+            short thermalMinimum = Short.MAX_VALUE;
+            short thermalMaximum = Short.MIN_VALUE;
             int renderedImageWidth = renderedImage.width();
             int renderedImageHeight = renderedImage.height();
             short[] pix = renderedImage.thermalPixelData();
@@ -267,74 +263,104 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
                         }
                     }
                     short result = (short)(accumulator / (endX - startX + 1) / (endY - startY + 1));
-                    newThermalData[x + numPanelsWide * y] = result;
-                }
-            }
-            short[] newThermalLocalMean = new short[numPanelsWide * numPanelsHigh];
-            for (int y = 0; y < numPanelsHigh; y++) {
-                for (int x = 0; x < numPanelsWide; x++) {
-                    int localTotal = 0;
-                    short localCount = 0;
-                    if (x > 0) {
-                        localTotal += newThermalData[x - 1 + numPanelsWide * y];
-                        localCount++;
-                    }
-                    if (y > 0) {
-                        localTotal += newThermalData[x + numPanelsWide * (y - 1)];
-                        localCount++;
-                    }
-                    if (x < numPanelsWide - 1) {
-                        localTotal += newThermalData[x + 1 + numPanelsWide * y];
-                        localCount++;
-                    }
-                    if (y < numPanelsHigh - 1) {
-                        localTotal += newThermalData[x + numPanelsWide * (y + 1)];
-                        localCount++;
-                    }
-                    newThermalLocalMean[x + numPanelsWide * y] = (short)(localTotal / localCount);
+                    thermalData[x + numPanelsWide * y] = result;
+                    thermalTotal += result;
+                    thermalMinimum = (short)Math.min(thermalMinimum, result);
+                    thermalMaximum = (short)Math.max(thermalMaximum, result);
                 }
             }
             /*
-            short[] newThermalLocalMean2 = new short[numPanelsWide * numPanelsHigh];
+            short[] thermalLocalMean = new short[numPanelsWide * numPanelsHigh];
             for (int y = 0; y < numPanelsHigh; y++) {
                 for (int x = 0; x < numPanelsWide; x++) {
                     int localTotal = 0;
                     short localCount = 0;
                     if (x > 0) {
-                        localTotal += newThermalLocalMean[x - 1 + numPanelsWide * y];
+                        localTotal += thermalData[x - 1 + numPanelsWide * y];
                         localCount++;
                     }
                     if (y > 0) {
-                        localTotal += newThermalLocalMean[x + numPanelsWide * (y - 1)];
+                        localTotal += thermalData[x + numPanelsWide * (y - 1)];
                         localCount++;
                     }
                     if (x < numPanelsWide - 1) {
-                        localTotal += newThermalLocalMean[x + 1 + numPanelsWide * y];
+                        localTotal += thermalData[x + 1 + numPanelsWide * y];
                         localCount++;
                     }
                     if (y < numPanelsHigh - 1) {
-                        localTotal += newThermalLocalMean[x + numPanelsWide * (y + 1)];
+                        localTotal += thermalData[x + numPanelsWide * (y + 1)];
                         localCount++;
                     }
-                    newThermalLocalMean[x + numPanelsWide * y] = (short)(localTotal / localCount);
+                    thermalLocalMean[x + numPanelsWide * y] = (short)(localTotal / localCount);
                 }
             }
             */
+            /*
+            short[] thermalLocalMean2 = new short[numPanelsWide * numPanelsHigh];
             for (int y = 0; y < numPanelsHigh; y++) {
                 for (int x = 0; x < numPanelsWide; x++) {
-                    short result = (short)(newThermalData[x + numPanelsWide * y] - newThermalLocalMean[x + numPanelsWide * y]);// - newThermalLocalMean2[x + numPanelsWide * y]);
-                    newThermalData[x + numPanelsWide * y] = result;
-                    newThermalTotal += result;
-                    newThermalMinimum = (short)Math.min(newThermalMinimum, result);
-                    newThermalMaximum = (short)Math.max(newThermalMaximum, result);
+                    int localTotal = 0;
+                    short localCount = 0;
+                    if (x > 0) {
+                        localTotal += thermalLocalMean[x - 1 + numPanelsWide * y];
+                        localCount++;
+                    }
+                    if (y > 0) {
+                        localTotal += thermalLocalMean[x + numPanelsWide * (y - 1)];
+                        localCount++;
+                    }
+                    if (x < numPanelsWide - 1) {
+                        localTotal += thermalLocalMean[x + 1 + numPanelsWide * y];
+                        localCount++;
+                    }
+                    if (y < numPanelsHigh - 1) {
+                        localTotal += thermalLocalMean[x + numPanelsWide * (y + 1)];
+                        localCount++;
+                    }
+                    thermalLocalMean[x + numPanelsWide * y] = (short)(localTotal / localCount);
                 }
             }
+            */
+            /*
+            for (int y = 0; y < numPanelsHigh; y++) {
+                for (int x = 0; x < numPanelsWide; x++) {
+                    short result = (short)(thermalData[x + numPanelsWide * y] - thermalLocalMean[x + numPanelsWide * y]);// - thermalLocalMean2[x + numPanelsWide * y]);
+                    thermalData[x + numPanelsWide * y] = result;
+                    thermalTotal += result;
+                    thermalMinimum = (short)Math.min(thermalMinimum, result);
+                    thermalMaximum = (short)Math.max(thermalMaximum, result);
+                }
+            }
+            */
+            short thermalAverage = (short)(thermalTotal / (numPanelsWide * numPanelsHigh));
+            short thermalThreshold = (short)(thermalAverage + 50);
+            boolean[] newToneArray = new boolean[numPanelsWide * numPanelsHigh];
+            for (int y = 0; y < numPanelsHigh; y++) {
+                for (int x = 0; x < numPanelsWide; x++) {
+                    short thermalValue = thermalData[x + numPanelsWide * y];
+                    /*
+                    int greaterCount = 0;
+                    if (thermalValue > thermalThreshold) {
+                        if ((x > 0) && (thermalData[x - 1 + numPanelsWide * y] > thermalValue)) {
+                            greaterCount++;
+                        }
+                        if ((y > 0) && (thermalData[x + numPanelsWide * (y - 1)] > thermalValue)) {
+                            greaterCount++;
+                        }
+                        if ((x < numPanelsWide - 1) && (thermalData[x + 1 + numPanelsWide * y] > thermalValue)) {
+                            greaterCount++;
+                        }
+                        if ((y < numPanelsHigh - 1) && (thermalData[x + numPanelsWide * (y + 1)] > thermalValue)) {
+                            greaterCount++;
+                        }
+                    }
+                    */
+                    newToneArray[x + numPanelsWide * y] = (thermalValue > thermalThreshold);
+                }
+            }
+
             synchronized (this) {
-                thermalData = newThermalData;
-                thermalAverage = (short)(newThermalTotal / (numPanelsWide * numPanelsHigh));
-                thermalMinimum = newThermalMinimum;
-                thermalMaximum = newThermalMaximum;
-                thermalThreshold = (short)(thermalAverage + 20);
+                toneArray = newToneArray;
             }
         }
     }
