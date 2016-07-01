@@ -5,19 +5,15 @@ import com.github.williams.matt.thermorion.util.SystemUiHider;
 import android.annotation.TargetApi;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.DialogInterface;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
-import android.graphics.Paint;
 import android.graphics.PorterDuff;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 import android.media.AudioManager;
-import android.media.MediaScannerConnection;
-import android.net.Uri;
-import android.os.Environment;
 import android.util.Log;
-import android.content.Context;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.os.Build;
@@ -27,11 +23,8 @@ import android.view.MotionEvent;
 import android.view.OrientationEventListener;
 import android.view.ScaleGestureDetector;
 import android.view.View;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.EditText;
+import android.view.ViewTreeObserver;
 import android.widget.ImageView;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ToggleButton;
@@ -40,20 +33,10 @@ import com.flir.flironesdk.Device;
 import com.flir.flironesdk.Frame;
 import com.flir.flironesdk.FrameProcessor;
 import com.flir.flironesdk.RenderedImage;
-import com.flir.flironesdk.LoadedFrame;
 import com.flir.flironesdk.SimulatedDevice;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.Socket;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.EnumSet;
-import java.util.Locale;
+import java.util.concurrent.Executor;
 
 /**
  * An example activity and delegate for FLIR One image streaming and device interaction.
@@ -66,18 +49,15 @@ import java.util.Locale;
  * @see com.flir.flironesdk.Device.StreamDelegate
  * @see com.flir.flironesdk.Device.PowerUpdateDelegate
  */
-public class PreviewActivity extends Activity implements Device.Delegate, FrameProcessor.Delegate, Device.StreamDelegate, Device.PowerUpdateDelegate{
+public class PreviewActivity extends Activity implements Device.Delegate, Device.StreamDelegate, FrameProcessor.Delegate, Device.PowerUpdateDelegate {
     private ImageView thermalImageView;
-    private OverlayView overlayView;
-    private boolean chargeCableIsConnected = true;
+    private OverlayDrawable overlayDrawable;
 
     private int deviceRotation = 0;
     private OrientationEventListener orientationEventListener;
 
     private volatile Device flirOneDevice;
-    private FrameProcessor frameProcessor;
 
-    private Device.TuningState currentTuningState = Device.TuningState.Unknown;
     // Device Delegate methods
 
     // Called during device discovery, when a device is connected
@@ -86,9 +66,7 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
     // Go ahead and start frame stream as soon as connected, in this use case
     // Finally we create a frame processor for rendering frames
 
-    public void onDeviceConnected(Device device){
-        Log.i("ExampleApp", "Device connected!");
-
+    public void onDeviceConnected(Device device) {
         mPromptHandler.removeCallbacks(mPromptRunnable);
         if (mPromptToast != null) {
             mPromptToast.cancel();
@@ -105,15 +83,14 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
     /**
      * Indicate to the user that the device has disconnected
      */
-    public void onDeviceDisconnected(Device device){
-        Log.i("ExampleApp", "Device disconnected!");
-
-        final TextView levelTextView = (TextView)findViewById(R.id.batteryLevelTextView);
-        final ImageView chargingIndicator = (ImageView)findViewById(R.id.batteryChargeIndicator);
+    public void onDeviceDisconnected(Device device) {
+        final TextView levelTextView = (TextView) findViewById(R.id.batteryLevelTextView);
+        final ImageView chargingIndicator = (ImageView) findViewById(R.id.batteryChargeIndicator);
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                thermalImageView.setImageBitmap(Bitmap.createBitmap(1,1, Bitmap.Config.ALPHA_8));
+                thermalImageView.setImageBitmap(Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8));
+                // TODO: Reset overlay
                 levelTextView.setText("--");
                 chargingIndicator.setVisibility(View.GONE);
                 thermalImageView.clearColorFilter();
@@ -126,17 +103,18 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
         orientationEventListener.disable();
     }
 
+    private Device.TuningState currentTuningState = Device.TuningState.Unknown;
+
     /**
      * If using RenderedImage.ImageType.ThermalRadiometricKelvinImage, you should not rely on
      * the accuracy if tuningState is not Device.TuningState.Tuned
+     *
      * @param tuningState
      */
-    public void onTuningStateChanged(Device.TuningState tuningState){
-        Log.i("ExampleApp", "Tuning state changed changed!");
-
+    public void onTuningStateChanged(Device.TuningState tuningState) {
         currentTuningState = tuningState;
-        if (tuningState == Device.TuningState.InProgress){
-            runOnUiThread(new Thread(){
+        if (tuningState == Device.TuningState.InProgress) {
+            runOnUiThread(new Thread() {
                 @Override
                 public void run() {
                     super.run();
@@ -145,7 +123,7 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
                     findViewById(R.id.tuningTextView).setVisibility(View.VISIBLE);
                 }
             });
-        }else {
+        } else {
             runOnUiThread(new Thread() {
                 @Override
                 public void run() {
@@ -160,18 +138,17 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
 
     @Override
     public void onAutomaticTuningChanged(boolean deviceWillTuneAutomatically) {
-
     }
+
     private ColorFilter originalChargingIndicatorColor = null;
+
     @Override
     public void onBatteryChargingStateReceived(final Device.BatteryChargingState batteryChargingState) {
-        Log.i("ExampleApp", "Battery charging state received!");
-
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                ImageView chargingIndicator = (ImageView)findViewById(R.id.batteryChargeIndicator);
-                if (originalChargingIndicatorColor == null){
+                ImageView chargingIndicator = (ImageView) findViewById(R.id.batteryChargeIndicator);
+                if (originalChargingIndicatorColor == null) {
                     originalChargingIndicatorColor = chargingIndicator.getColorFilter();
                 }
                 switch (batteryChargingState) {
@@ -195,66 +172,102 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
             }
         });
     }
-    @Override
-    public void onBatteryPercentageReceived(final byte percentage){
-        Log.i("ExampleApp", "Battery percentage received!");
 
-        final TextView levelTextView = (TextView)findViewById(R.id.batteryLevelTextView);
+    @Override
+    public void onBatteryPercentageReceived(final byte percentage) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                TextView levelTextView = (TextView) findViewById(R.id.batteryLevelTextView);
                 levelTextView.setText(String.valueOf((int) percentage) + "%");
             }
         });
     }
 
-    private void updateThermalImageView(final Bitmap frame){
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                thermalImageView.setImageBitmap(frame);
+    private FrameProcessorThread frameProcessorThread = null;
+    private class FrameProcessorThread extends Thread {
+        private FrameProcessor frameProcessor;
+        private Frame frameToProcess = null;
+        private boolean terminating = false;
+
+        public FrameProcessorThread(Context context, FrameProcessor.Delegate delegate) {
+            frameProcessor = new FrameProcessor(context, delegate, EnumSet.of(RenderedImage.ImageType.ThermalRGBA8888Image,
+                                                                              RenderedImage.ImageType.ThermalRadiometricKelvinImage));
+            start();
+        }
+
+        public void processFrame(Frame frame) {
+            synchronized (this) {
+                frameToProcess = frame;
+                notify();
             }
-        });
+        }
+
+        public void terminate() {
+            synchronized (this) {
+                terminating = true;
+                notify();
+            }
+        }
+
+        @Override
+        public void run() {
+            while (!terminating) {
+                try {
+                    Frame frame = null;
+                    synchronized(this) {
+                        while ((frameToProcess == null) && terminating) {
+                            wait();
+                        }
+                        frame = frameToProcess;
+                        frameToProcess = null;
+                    }
+                    if (frame != null) {
+                        frameProcessor.processFrame(frame);
+                    }
+                } catch (InterruptedException e) {
+                    Log.e("FrameProcessorThread", "Caught InterruptedException", e);
+                }
+            }
+        }
+    };
+
+    @Override
+    public void onFrameProcessed(final RenderedImage renderedImage) {
+        if (renderedImage.imageType() == RenderedImage.ImageType.ThermalRadiometricKelvinImage) {
+            overlayDrawable.updateThermalImage(renderedImage);
+        } else if (renderedImage.imageType() == RenderedImage.ImageType.ThermalRGBA8888Image) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    thermalImageView.setImageBitmap(renderedImage.getBitmap());
+                    Rect oldBounds = overlayDrawable.getBounds();
+                    int imageViewWidth = thermalImageView.getWidth();
+                    int imageViewHeight = thermalImageView.getHeight();
+                    int imageWidth = renderedImage.width();
+                    int imageHeight = renderedImage.height();
+                    if ((imageViewWidth > 0) && (imageViewHeight > 0)) {
+                        double scaleFactor = Math.min(imageViewWidth * 1.0 / imageWidth, imageViewHeight * 1.0 / imageHeight);
+                        int scaledWidth = (int)(imageWidth * scaleFactor);
+                        int scaledHeight = (int)(imageHeight * scaleFactor);
+                        int padLeft = (imageViewWidth - scaledWidth) / 2;
+                        int padTop = (imageViewHeight - scaledHeight) / 2;
+                        Rect newBounds = new Rect(padLeft, padTop, padLeft + scaledWidth, padTop + scaledHeight);
+                        overlayDrawable.setBounds(newBounds);
+                    }
+                }
+            });
+        }
     }
 
     // StreamDelegate method
     public void onFrameReceived(Frame frame){
-        Log.v("ExampleApp", "Frame received!");
-
-        if (currentTuningState != Device.TuningState.InProgress){
-            frameProcessor.processFrame(frame);
+        if ((currentTuningState != Device.TuningState.InProgress) && (frameProcessorThread != null)) {
+            frameProcessorThread.processFrame(frame);
         }
     }
 
-    private Bitmap thermalBitmap = null;
-
-    // Frame Processor Delegate method, will be called each time a rendered frame is produced
-    public void onFrameProcessed(final RenderedImage renderedImage) {
-        if (renderedImage.imageType() == RenderedImage.ImageType.ThermalRadiometricKelvinImage) {
-            overlayView.updateThermalImage(renderedImage);
-        } else if (renderedImage.imageType() == RenderedImage.ImageType.ThermalRGBA8888Image) {
-            thermalBitmap = renderedImage.getBitmap();
-            updateThermalImageView(thermalBitmap);
-        }
-    }
-
-    /**
-     * Whether or not the system UI should be auto-hidden after
-     * {@link #AUTO_HIDE_DELAY_MILLIS} milliseconds.
-     */
-    private static final boolean AUTO_HIDE = true;
-
-    /**
-     * If {@link #AUTO_HIDE} is set, the number of milliseconds to wait after
-     * user interaction before hiding the system UI.
-     */
     private static final int AUTO_HIDE_DELAY_MILLIS = 3000;
-
-    /**
-     * If set, will toggle the system UI visibility upon interaction. Otherwise,
-     * will show the system UI visibility upon interaction.
-     */
-    private static final boolean TOGGLE_ON_CLICK = true;
 
     /**
      * The flags to pass to {@link SystemUiHider#getInstance}.
@@ -272,17 +285,16 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
 
     }
     public void onConnectSimClicked(View v){
-        if(flirOneDevice == null){
+        if (flirOneDevice == null) {
             try {
                 flirOneDevice = new SimulatedDevice(this, this, getResources().openRawResource(R.raw.sampleframes), 10);
                 flirOneDevice.setPowerUpdateDelegate(this);
-                chargeCableIsConnected = true;
-            } catch(Exception ex) {
+            } catch (Exception ex) {
                 flirOneDevice = null;
-                Log.w("Thermorion", "IO EXCEPTION");
+                Log.e("PreviewActivity", "onConnectSimClicked Exception: ", ex);
                 ex.printStackTrace();
             }
-        }else if(flirOneDevice instanceof SimulatedDevice) {
+        } else if (flirOneDevice instanceof SimulatedDevice) {
             flirOneDevice.close();
             flirOneDevice = null;
         }
@@ -297,15 +309,14 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
         }
     }
 
+    // TODO: onResume?
     @Override
     protected void onStart(){
         super.onStart();
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
-        thermalImageView = (ImageView) findViewById(R.id.imageView);
-        overlayView = (OverlayView) findViewById(R.id.overlayView);
         try {
             Device.startDiscovery(this, this);
-        }catch(IllegalStateException e){
+        } catch(IllegalStateException e) {
             // it's okay if we've already started discovery
         }
         if (flirOneDevice == null) {
@@ -313,20 +324,44 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
         }
     }
 
-    ScaleGestureDetector mScaleDetector;
+    private Handler animationHandler = new Handler();
+    private Runnable animationRunnable = new Runnable() {
+        @Override
+        public void run() {
+            thermalImageView.invalidate();
+            animationHandler.removeCallbacks(this);
+            animationHandler.postDelayed(this, 20);
+        }
+    };
+    @Override
+    protected void onResume() {
+        super.onResume();
+        frameProcessorThread = new FrameProcessorThread(this, this);
+        overlayDrawable.start();
+        animationHandler.postDelayed(animationRunnable, 20);
+    }
+    @Override
+    protected void onPause() {
+        animationHandler.removeCallbacks(animationRunnable);
+        overlayDrawable.stop();
+        frameProcessorThread.terminate();
+        frameProcessorThread = null;
+        super.onPause();
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-
         setContentView(R.layout.activity_preview);
+
+        thermalImageView = (ImageView) findViewById(R.id.imageView);
+        overlayDrawable = new OverlayDrawable(this);
+        thermalImageView.getOverlay().add(overlayDrawable);
 
         final View controlsView = findViewById(R.id.fullscreen_content_controls);
         final View controlsViewTop = findViewById(R.id.fullscreen_content_controls_top);
         final View contentView = findViewById(R.id.fullscreen_content);
-
-        frameProcessor = new FrameProcessor(this, this, EnumSet.of(RenderedImage.ImageType.ThermalRGBA8888Image,
-                                                                   RenderedImage.ImageType.ThermalRadiometricKelvinImage));
 
         // Set up an instance of SystemUiHider to control the system UI for
         // this activity.
@@ -375,11 +410,7 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
         contentView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                if (TOGGLE_ON_CLICK) {
-                    mSystemUiHider.toggle();
-                } else {
-                    mSystemUiHider.show();
-                }
+                mSystemUiHider.toggle();
             }
         });
 
@@ -389,28 +420,6 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
                 deviceRotation = orientation;
             }
         };
-        mScaleDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.OnScaleGestureListener() {
-            @Override
-            public void onScaleEnd(ScaleGestureDetector detector) {
-            }
-            @Override
-            public boolean onScaleBegin(ScaleGestureDetector detector) {
-                return true;
-            }
-            @Override
-            public boolean onScale(ScaleGestureDetector detector) {
-                frameProcessor.setMSXDistance(detector.getScaleFactor());
-                return false;
-            }
-        });
-
-        findViewById(R.id.fullscreen_content).setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                mScaleDetector.onTouchEvent(event);
-                return true;
-            }
-        });
 
         Dialog dialog = new AlertDialog.Builder(this).setTitle(R.string.app_name).setMessage(R.string.about_dialog).setPositiveButton("OK", new DialogInterface.OnClickListener() {
             @Override
@@ -451,7 +460,6 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
         delayedHide(100);
     }
 
-
     /**
      * Touch listener to use for in-layout UI controls to delay hiding the
      * system UI. This is to prevent the jarring behavior of controls going away
@@ -460,9 +468,7 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
     View.OnTouchListener mDelayHideTouchListener = new View.OnTouchListener() {
         @Override
         public boolean onTouch(View view, MotionEvent motionEvent) {
-            if (AUTO_HIDE) {
-                delayedHide(AUTO_HIDE_DELAY_MILLIS);
-            }
+            delayedHide(AUTO_HIDE_DELAY_MILLIS);
             return false;
         }
     };
@@ -490,7 +496,7 @@ public class PreviewActivity extends Activity implements Device.Delegate, FrameP
         @Override
         public void run() {
             if (flirOneDevice == null) {
-                mPromptToast = Toast.makeText(PreviewActivity.this, "No thermal camera found - attach or enable one, or press \"Toggle Sim\" to simulate", Toast.LENGTH_LONG);
+                mPromptToast = Toast.makeText(PreviewActivity.this, R.string.no_camera_prompt, Toast.LENGTH_LONG);
                 mPromptToast.show();
             }
         }

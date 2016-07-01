@@ -16,15 +16,6 @@
         android:focusableInTouchMode="false"
         android:scaleType="fitCenter" />
 
-    <com.github.williams.matt.thermorion.OverlayView
-        android:layout_width="fill_parent"
-        android:layout_height="fill_parent"
-        android:id="@+id/overlayView"
-        android:layout_gravity="center_horizontal|top"
-        android:focusable="false"
-        android:focusableInTouchMode="false"
-        android:scaleType="fitCenter" />
-
     <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent"
         android:fitsSystemWindows="true"
         android:id="@+id/fullscreen_content">

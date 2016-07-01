@@ -14,5 +14,6 @@
         Thermori-on divides the camera\'s view up into cells, and measures the temperature of each.
         A green line sweeps over the cells and, as it does so, those cells that are hot play a note, with pitch dependent on location.\n\n
         Explore the soundscapes created by the heat of your environment!  Touch your surroundings to change their temperature... and their sound!</string>
+    <string name="no_camera_prompt">No thermal camera found - attach or enable one, or press \"Toggle Sim\" to simulate</string>
 
 </resources>
