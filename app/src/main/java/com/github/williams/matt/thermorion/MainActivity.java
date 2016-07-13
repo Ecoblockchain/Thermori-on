@@ -62,6 +62,7 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
     // Finally we create a frame processor for rendering frames
 
     public synchronized void onDeviceConnected(Device device) {
+        mRetryHandler.removeCallbacks(mRetryRunnable);
         mPromptHandler.removeCallbacks(mPromptRunnable);
         if (mPromptToast != null) {
             mPromptToast.cancel();
@@ -372,14 +373,18 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
 
     @Override
     protected synchronized void onStart(){
+        Log.e("Thermori-on", "onStart");
         super.onStart();
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
+//        overlayDrawable.reset();
+//        thermalImageView.setImageResource(R.drawable.insert_flir);
         try {
             Device.startDiscovery(this, this);
         } catch(IllegalStateException e) {
             // it's okay if we've already started discovery
         }
         if (flirOneDevice == null) {
+            mRetryHandler.postDelayed(mRetryRunnable, 2000);
             mPromptHandler.postDelayed(mPromptRunnable, 5000);
         }
     }
@@ -396,23 +401,24 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
 
     @Override
     protected synchronized void onResume() {
+        Log.e("Thermori-on", "onResume");
         super.onResume();
         frameProcessorThread = new FrameProcessorThread(this, this);
-        //overlayDrawable.reset();
         overlayDrawable.start();
         animationHandler.postDelayed(animationRunnable, 20);
-        if (flirOneDevice != null) {
-            flirOneDevice.setPowerUpdateDelegate(this);
-            flirOneDevice.startFrameStream(this);
-        }
+//        if (flirOneDevice != null) {
+//            flirOneDevice.setPowerUpdateDelegate(this);
+//            flirOneDevice.startFrameStream(this);
+//        }
     }
 
     @Override
     protected synchronized void onPause() {
-        if (flirOneDevice != null) {
-            flirOneDevice.stopFrameStream();
-            flirOneDevice.setPowerUpdateDelegate(null);
-        }
+        Log.e("Thermori-on", "onPause");
+//        if (flirOneDevice != null) {
+//            flirOneDevice.stopFrameStream();
+//            flirOneDevice.setPowerUpdateDelegate(null);
+//        }
         animationHandler.removeCallbacks(animationRunnable);
         overlayDrawable.stop();
         frameProcessorThread.terminate();
@@ -423,6 +429,7 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
 
     @Override
     public synchronized void onStop() {
+        Log.e("Thermori-on", "onStop");
         // We must unregister our usb receiver, otherwise we will steal events from other apps
         Device.stopDiscovery();
         flirOneDevice = null;
@@ -459,6 +466,24 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
         mHideHandler.postDelayed(mHideRunnable, delayMillis);
     }
 
+    Handler mRetryHandler = new Handler();
+    Runnable mRetryRunnable = new Runnable() {
+        @Override
+        public void run() {
+            synchronized (MainActivity.this) {
+                if (flirOneDevice == null) {
+                    // Try restarting discovery - sometimes that helps
+                    Device.stopDiscovery();
+                    try {
+                        Device.startDiscovery(MainActivity.this, MainActivity.this);
+                    } catch (IllegalStateException e) {
+                        // it's okay if we've already started discovery
+                    }
+                }
+            }
+        }
+    };
+
     Handler mPromptHandler = new Handler();
     Toast mPromptToast = null;
     Runnable mPromptRunnable = new Runnable() {
@@ -467,14 +492,6 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
             if (flirOneDevice == null) {
                 mPromptToast = Toast.makeText(MainActivity.this, R.string.no_camera_prompt, Toast.LENGTH_LONG);
                 mPromptToast.show();
-
-                // Try restarting discovery - sometimes that helps
-                Device.stopDiscovery();
-                try {
-                    Device.startDiscovery(MainActivity.this, MainActivity.this);
-                } catch(IllegalStateException e) {
-                    // it's okay if we've already started discovery
-                }
             }
         }
     };

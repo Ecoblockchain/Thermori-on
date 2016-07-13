@@ -104,6 +104,15 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
     }
 
     public synchronized void reset() {
+        left = 0;
+        top = 0;
+        width = 0;
+        height = 0;
+        panelSize = 0;
+        numPanelsWide = 0;
+        numPanelsHigh = 0;
+        panelXPadding = 0;
+        panelYPadding = 0;
         toneArray = new boolean[numPanelsWide * numPanelsHigh];
         animating = new boolean[Math.min(numPanelsWide, numPanelsHigh)];
         startTime = new Date().getTime();
