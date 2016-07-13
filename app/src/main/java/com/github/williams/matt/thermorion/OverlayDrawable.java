@@ -103,6 +103,14 @@ public class OverlayDrawable extends Drawable implements Drawable.Callback {
         tickInTimeslot = 0;
     }
 
+    public synchronized void reset() {
+        toneArray = new boolean[numPanelsWide * numPanelsHigh];
+        animating = new boolean[Math.min(numPanelsWide, numPanelsHigh)];
+        startTime = new Date().getTime();
+        timeslot = 0;
+        tickInTimeslot = 0;
+    }
+
     class SoundThread extends Thread {
         private boolean terminating = false;
 

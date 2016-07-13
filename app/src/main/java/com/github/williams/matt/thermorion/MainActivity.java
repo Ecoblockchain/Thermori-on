@@ -61,7 +61,7 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
     // Go ahead and start frame stream as soon as connected, in this use case
     // Finally we create a frame processor for rendering frames
 
-    public void onDeviceConnected(Device device) {
+    public synchronized void onDeviceConnected(Device device) {
         mPromptHandler.removeCallbacks(mPromptRunnable);
         if (mPromptToast != null) {
             mPromptToast.cancel();
@@ -78,7 +78,7 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
     /**
      * Indicate to the user that the device has disconnected
      */
-    public void onDeviceDisconnected(Device device) {
+    public synchronized void onDeviceDisconnected(Device device) {
         final TextView levelTextView = (TextView) findViewById(R.id.batteryLevelTextView);
         final ImageView chargingIndicator = (ImageView) findViewById(R.id.batteryChargeIndicator);
         runOnUiThread(new Runnable() {
@@ -288,46 +288,6 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
         }
     }
 
-    // TODO: onResume?
-    @Override
-    protected void onStart(){
-        super.onStart();
-        setVolumeControlStream(AudioManager.STREAM_MUSIC);
-        try {
-            Device.startDiscovery(this, this);
-        } catch(IllegalStateException e) {
-            // it's okay if we've already started discovery
-        }
-        if (flirOneDevice == null) {
-            mPromptHandler.postDelayed(mPromptRunnable, 5000);
-        }
-    }
-
-    private Handler animationHandler = new Handler();
-    private Runnable animationRunnable = new Runnable() {
-        @Override
-        public void run() {
-            thermalImageView.invalidate();
-            animationHandler.removeCallbacks(this);
-            animationHandler.postDelayed(this, 20);
-        }
-    };
-    @Override
-    protected void onResume() {
-        super.onResume();
-        frameProcessorThread = new FrameProcessorThread(this, this);
-        overlayDrawable.start();
-        animationHandler.postDelayed(animationRunnable, 20);
-    }
-    @Override
-    protected void onPause() {
-        animationHandler.removeCallbacks(animationRunnable);
-        overlayDrawable.stop();
-        frameProcessorThread.terminate();
-        frameProcessorThread = null;
-        super.onPause();
-    }
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -411,25 +371,62 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
     }
 
     @Override
-    public void onRestart(){
+    protected synchronized void onStart(){
+        super.onStart();
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         try {
             Device.startDiscovery(this, this);
-        } catch (IllegalStateException e) {
-            Log.e("MainActivity", "Caught IllegalStateException", e);
+        } catch(IllegalStateException e) {
+            // it's okay if we've already started discovery
         }
-        super.onRestart();
+        if (flirOneDevice == null) {
+            mPromptHandler.postDelayed(mPromptRunnable, 5000);
+        }
+    }
+
+    private Handler animationHandler = new Handler();
+    private Runnable animationRunnable = new Runnable() {
+        @Override
+        public void run() {
+            thermalImageView.invalidate();
+            animationHandler.removeCallbacks(this);
+            animationHandler.postDelayed(this, 20);
+        }
+    };
+
+    @Override
+    protected synchronized void onResume() {
+        super.onResume();
+        frameProcessorThread = new FrameProcessorThread(this, this);
+        //overlayDrawable.reset();
+        overlayDrawable.start();
+        animationHandler.postDelayed(animationRunnable, 20);
+        if (flirOneDevice != null) {
+            flirOneDevice.setPowerUpdateDelegate(this);
+            flirOneDevice.startFrameStream(this);
+        }
     }
 
     @Override
-    public void onStop() {
+    protected synchronized void onPause() {
+        if (flirOneDevice != null) {
+            flirOneDevice.stopFrameStream();
+            flirOneDevice.setPowerUpdateDelegate(null);
+        }
+        animationHandler.removeCallbacks(animationRunnable);
+        overlayDrawable.stop();
+        frameProcessorThread.terminate();
+        frameProcessorThread = null;
+        super.onPause();
+    }
+
+
+    @Override
+    public synchronized void onStop() {
         // We must unregister our usb receiver, otherwise we will steal events from other apps
         Device.stopDiscovery();
+        flirOneDevice = null;
         super.onStop();
-    }
-
-    @Override
-    protected void onPostCreate(Bundle savedInstanceState) {
-        super.onPostCreate(savedInstanceState);
     }
 
     /**
@@ -470,6 +467,14 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
             if (flirOneDevice == null) {
                 mPromptToast = Toast.makeText(MainActivity.this, R.string.no_camera_prompt, Toast.LENGTH_LONG);
                 mPromptToast.show();
+
+                // Try restarting discovery - sometimes that helps
+                Device.stopDiscovery();
+                try {
+                    Device.startDiscovery(MainActivity.this, MainActivity.this);
+                } catch(IllegalStateException e) {
+                    // it's okay if we've already started discovery
+                }
             }
         }
     };
