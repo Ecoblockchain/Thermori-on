@@ -7,11 +7,13 @@ import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.util.Log;
 import android.app.Activity;
 import android.graphics.Bitmap;
@@ -365,6 +367,13 @@ public class MainActivity extends Activity implements Device.Delegate, Device.St
                 // created, to briefly hint to the user that UI controls
                 // are available.
                 delayedHide(100);
+            }
+        }).setNegativeButton("Privacy", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialogInterface, int i) {
+                Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+                viewIntent.setData(Uri.parse(getResources().getString(R.string.privacy_policy_url)));
+                startActivity(viewIntent);
             }
         }).create();
         dialog.show();

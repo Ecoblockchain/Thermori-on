@@ -12,5 +12,6 @@
     <string name="txtTuning">Tuning...</string>
     <string name="about_dialog">Thermori-on is a thermal musical instrument, inspired by the "Tenori-on", and using your FLIR thermal imaging camera.\n\nThermori-on divides the camera\'s view up into cells, and measures the temperature of each. A green line sweeps over the cells and, as it does so, those cells that are hot play a note, with pitch dependent on location.\n\nExplore the soundscapes created by the heat of your environment!  Touch your surroundings to change their temperature... and their sound!</string>
     <string name="no_camera_prompt">No thermal camera found - please attach one</string>
+    <string name="privacy_policy_url">https://matt-williams.github.io/Thermori-on/privacy.html</string>
 
 </resources>
